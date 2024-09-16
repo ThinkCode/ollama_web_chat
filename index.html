@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat with Llama 3.1</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        #chat {
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background-color: #fff;
+            border-radius: 5px;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+            position: relative;
+        }
+        .user {
+            background-color: #d1e7dd;
+            text-align: right;
+        }
+        .llama {
+            background-color: #f8d7da;
+        }
+        .llama p {
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Chat with Llama 3.1</h1>
+    <form id="chat-form">
+        <input type="text" id="question" placeholder="Ask a question..." required>
+        <button type="submit">Send</button>
+    </form>
+    <div id="chat"></div>
+
+    <script>
+        const form = document.getElementById('chat-form');
+        const chatDiv = document.getElementById('chat');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const question = document.getElementById('question').value;
+            addMessage(question, 'user');
+            document.getElementById('question').value = '';
+
+            try {
+                const response = await fetch('http://localhost:3009/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ prompt: question }),
+                });
+
+                // Check if the response is OK
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Error response from Llama 3.1:', errorText);
+                    addMessage('Error from Llama 3.1', 'llama');
+                    return;
+                }
+
+                // Read the response as a stream
+                const reader = response.body.getReader();
+                let done = false;
+
+                // Create a message div for the Llama response
+                const llamaMessageDiv = document.createElement('div');
+                llamaMessageDiv.className = 'message llama';
+                chatDiv.appendChild(llamaMessageDiv);
+
+                // Read the stream
+                while (!done) {
+                    const { done: streamDone, value } = await reader.read();
+                    done = streamDone;
+
+                    // Convert Uint8Array to string
+                    const chunk = new TextDecoder("utf-8").decode(value);
+                    let jsonResponses;
+
+                    try {
+                        jsonResponses = JSON.parse(chunk); // Parse the chunk as JSON
+                    } catch (parseError) {
+                        console.error('Error parsing JSON:', parseError);
+                        console.error('Raw chunk received:', chunk);
+                        addMessage('Error parsing response from Llama 3.1', 'llama');
+                        return;
+                    }
+
+                    // Process each response object
+                    jsonResponses.forEach(item => {
+                        if (item && item.response) {
+                            // Clean up the response to remove unwanted characters
+                            const cleanedResponse = cleanResponse(item.response);
+                            // Split the cleaned response into words
+                            const words = cleanedResponse.split(' ');
+
+                            // Display each word one by one
+                            words.forEach((word, index) => {
+                                setTimeout(() => {
+                                    llamaMessageDiv.innerHTML += word + ' '; // Append the new word to the message
+                                    chatDiv.scrollTop = chatDiv.scrollHeight; // Scroll to the bottom
+                                }, index * 300); // Adjust the delay as needed (300ms per word)
+                            });
+                        }
+                    });
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                addMessage('Error communicating with Llama 3.1', 'llama');
+            }
+        });
+
+        function addMessage(text, sender) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            messageDiv.innerHTML = text; // Use innerHTML to allow HTML formatting
+            chatDiv.appendChild(messageDiv);
+            chatDiv.scrollTop = chatDiv.scrollHeight; // Scroll to the bottom
+        }
+
+        function cleanResponse(response) {
+            // Remove unwanted characters and formatting
+            return response
+                .replace(/[^a-zA-Z0-9.,?!'"\s]/g, '') // Remove unwanted characters
+                .replace(/\s+/g, ' ') // Replace multiple spaces with a single space
+                .replace(/(\w+)\s+(\w+)/g, '\$1 \$2') // Ensure no words are split by spaces
+                .trim(); // Trim leading and trailing spaces
+        }
+    </script>
+</body>
+</html>
